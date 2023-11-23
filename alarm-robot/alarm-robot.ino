@@ -8,10 +8,10 @@ LiquidCrystal_I2C lcd(0x27, 16, 2);  // set the LCD address to 0x27 for a 16 cha
 ThreeWire myWire(3, 2, 4); //(DAT, CLK, RST)
 RtcDS1302<ThreeWire> Rtc(myWire);
 
+int lightSensorPin = A3;
+
 
 // alarm variables
-int eepromAddressHour = 0;
-int eepromAddressMinute = 1;
 int alarmHour = 0;
 int alarmMinute = 0;
 unsigned long previousMillis = 0;
@@ -21,6 +21,9 @@ int joystickMidValue = 20;
 int joystickXAxis = 0;
 int joystickYAxis = 0;
 int joystickButton = 0;
+int joystickXPin = A2;
+int joystickYPin = A1;
+int joystickButtonPin = A0;
 
 // user variables
 int streak = 0;
@@ -76,7 +79,7 @@ void decrementHour();
 void incrementMinute();
 void decrementMinute();
 void checkButtonSequence();
-void alarmScreen(unsigned long currentMillis, int lightValue, int sequenceFinished, RtcDateTime now);
+void alarmScreen(unsigned long currentMillis, int sequenceFinished, RtcDateTime now);
 void defaultScreen(RtcDateTime now);
 void statisticScreen();
 void alarm(RtcDateTime now);
@@ -100,27 +103,22 @@ void setup() {
 
   // get current time
   // only run once
-  // RtcDateTime currentTime= RtcDateTime(__DATE__, __TIME__);
-  // Rtc.SetDateTime(currentTime);
+  //RtcDateTime currentTime= RtcDateTime(__DATE__, __TIME__);
+  //Rtc.SetDateTime(currentTime);
 
-  // Read alarm from EEPROM
+  // read alarm from EEPROM
   alarmHour = EEPROM.read(0);
   alarmMinute = EEPROM.read(1);
 
   // joystick inputs
-  pinMode(A0, INPUT);
-  pinMode(A1, INPUT);
-  pinMode(A2, INPUT);
-
-  // light LED
-  //digitalWrite(10, HIGH); // red LED
-  //digitalWrite(9, HIGH);  // green LED
-  //digitalWrite(8, HIGH);  // blue LED
+  pinMode(joystickXPin, INPUT);
+  pinMode(joystickYPin, INPUT);
+  pinMode(joystickButtonPin, INPUT);
 
   // joystick values
-  joystickXAxis = analogRead(A2); // initial x position
-  joystickYAxis = analogRead(A1); // initial y positiona0
-  joystickButton = analogRead(A0);
+  joystickXAxis = analogRead(joystickXPin); // initial x position
+  joystickYAxis = analogRead(joystickYPin); // initial y position
+  joystickButton = analogRead(joystickButtonPin);
 }
 
 
@@ -164,8 +162,8 @@ void setAlarm() {
     }
     lcd.print(alarmMinute);
 
-    int yAxis = analogRead(A1);          // current y position
-    int joystickButton = analogRead(A0); // current value of button
+    int yAxis = analogRead(joystickYPin); // current y position
+    int joystickButton = analogRead(joystickButtonPin); // current value of button
 
     // joystick moves up, increment hour
     if (yAxis < joystickYAxis - joystickMidValue) {
@@ -203,8 +201,8 @@ void setAlarm() {
     }
     lcd.print(alarmMinute);
 
-    int yAxis = analogRead(A1);          // current y position
-    int joystickButton = analogRead(A0); // current value of button
+    int yAxis = analogRead(joystickYPin); // current y position
+    int joystickButton = analogRead(joystickButtonPin); // current value of button
 
     // joystick moves up, increment minute
     if (yAxis < joystickYAxis - joystickMidValue) {
@@ -265,13 +263,12 @@ void decrementMinute() {
 
 
 
-void checkButtonSequence() {
-  // check that user input is correct
-}
 
 // SET UP ALARM SCREEN
-void alarmScreen(unsigned long currentMillis, int lightValue, int sequenceFinished, RtcDateTime now) {
+void alarmScreen(unsigned long currentMillis, int sequenceFinished, RtcDateTime now) {
   if (currentMillis - previousMillis >= 1000) {
+    int lightValue = analogRead(A3);
+
     lcd.clear();
     lcd.setCursor(0, 0);
 
@@ -293,6 +290,12 @@ void alarmScreen(unsigned long currentMillis, int lightValue, int sequenceFinish
 
     previousMillis = currentMillis;
     countdown -= 1000;
+
+
+    // lightValue and sequence finished -> user woke up
+    // not lightValue and sequence finished -> alarm still going on
+    // countdown 0 -> statisics has X, alarm still going
+
 
     // light sensor reads high value + sequenceFinished -> user woke up, input the correct sequence and turned on the lights
     if (lightValue >= 0 && sequenceFinished <= 0) {
@@ -324,9 +327,9 @@ void alarmScreen(unsigned long currentMillis, int lightValue, int sequenceFinish
 void defaultScreen(RtcDateTime now) {
 
   // read values
-  int xAxis = analogRead(A2); // current x position
-  int yAxis = analogRead(A1); // current y position
-  int joystickButton = analogRead(A0); // current value of button
+  int xAxis = analogRead(joystickXPin); // current x position
+  int yAxis = analogRead(joystickYPin); // current y position
+  int joystickButton = analogRead(joystickButtonPin); // current value of button
 
   //check if user presses joystick
   if (joystickButton == 0) {
@@ -350,8 +353,14 @@ void defaultScreen(RtcDateTime now) {
     lcd.print("-");
     lcd.print(now.Year());
     lcd.setCursor(11, 0);
+    if (now.Hour() < 10) {
+      lcd.print("0");
+    }
     lcd.print(now.Hour());
     lcd.print(":");
+    if (now.Minute() < 10) {
+      lcd.print("0");
+    }
     lcd.print(now.Minute());
 
     // print alarm + design + streak
@@ -381,7 +390,7 @@ void statisticScreen(){
   lcd.clear();
   lcd.print("Statistic Screen");
 
-  while (!(analogRead(A1) < joystickYAxis - joystickMidValue)) {  // checks if joystick is moved upwards
+  while (!(analogRead(joystickYPin) < joystickYAxis - joystickMidValue)) {  // checks if joystick is moved upwards
     // Joystick did not move upwards
     delay(10);
   }
@@ -399,12 +408,11 @@ void alarm(RtcDateTime now) {
   unsigned long currentMillis = millis();
 
   // three tasks
+  // ledSequence
   // 1. Check user input
   checkButtonSequence();
-  // 2. Read light sensor value
-  int lightValue = analogRead(A5);
-  // 3. Alarm screen
-  alarmScreen(currentMillis, lightValue, sequenceFinished, now);
+  // 2. Alarm screen
+  alarmScreen(currentMillis, sequenceFinished, now);
 }
 
 
